@@ -1,0 +1,81 @@
+version: '3'
+
+services:
+  nginx:
+    restart: always
+    build: nginx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /srv/data/nginx/conf:/etc/nginx
+      - /srv/data/nginx/html:/html
+      - /srv/data/nginx/logs:/logs
+      - /srv/data/nginx/ssl:/ssl 
+    links:
+      - goaccess
+      - gunicorn
+    labels:
+      ofelia.job-exec.acme-update.schedule: "@daily"
+      ofelia.job-exec.acme-update.command: "/root/acme.sh --cron"
+      ofelia.enabled: "true"
+  goaccess:
+    restart: always
+    image: gregyankovoy/goaccess
+    ports: 
+      - 7889:7889
+    volumes:
+      - /srv/data/nginx/logs:/opt/log:ro
+      - /srv/data/goaccess/config:/config
+  gunicorn:
+    build: gunicorn
+    ports:
+      - 8000:8000
+    env_file:
+      - ./.env.prod.django
+    links:
+      - postgres
+      - rabbitmq
+    volumes:
+      - /srv/data/nginx/html:/html
+  celery:
+    build: gunicorn
+    env_file:
+      - ./.env.prod.django
+    links:
+      - postgres
+      - rabbitmq
+      - tor
+    command: celery -A personal_website worker -l info
+  postgres:
+    restart: always
+    image: postgres:12
+    env_file:
+      - ./.env.prod.postgres
+    volumes:
+      - /srv/data/postgres/data:/var/lib/postgresql/data
+      - /srv/data/postgres/logs:/var/log/postgresql
+    command: "-c logging_collector=on"
+  ofelia:
+    restart: always
+    image: mcuadros/ofelia
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: 
+      - nginx
+  rabbitmq:
+    restart: always
+    image: rabbitmq:3-management
+    env_file:
+      - ./.env.prod.rabbitmq
+    ports:
+      - 5672:5672
+      - 15672:15672
+  tor:
+    restart: always
+    image: dperson/torproxy
+    ports:
+      - 8118:8118
+
+
